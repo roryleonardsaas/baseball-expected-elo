@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Regeneratable ELO computation caches (large; rebuilt on first run)
+cache/elo_*.pkl
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Claude Code local config
+.claude/
+
+# Streamlit secrets
+.streamlit/secrets.toml
+
+# Keep the small Statcast parquet caches so the app loads instantly:
+# cache/statcast_*.parquet and cache/player_names.parquet ARE committed.
