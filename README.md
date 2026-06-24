@@ -1,13 +1,23 @@
-# Baseball ELO Ratings
+# Baseball ELO Ratings — Expected Stats (xwOBA)
 
 An interactive ELO rating system for MLB batters and pitchers, built on pitch-by-pitch
 Statcast data. Every plate appearance is a zero-sum contest: the batter and pitcher
 exchange rating points based on the outcome, weighted by how much it mattered.
 
+**This version is driven by expected stats (xwOBA).** On batted balls the rating credit comes
+from exit velocity and launch angle, not the actual result — a 105 mph line drive counts as a
+win for the batter even if it's caught, and a bloop single barely counts. So the rating reflects
+what a player *controls* (quality of contact) rather than batted-ball luck. Walks, strikeouts,
+and HBP have no batted-ball luck, so they use their actual wOBA weight. (A separate
+[wOBA + historical](https://github.com/roryleonardsaas/baseball-elo-v2) version uses actual
+outcomes and extends back to 1915 via Retrosheet.)
+
 ## Features
 
-- **wOBA-weighted outcomes** — a home run moves ratings far more than a walk, using each
-  PA's wOBA value rather than a simple on-base/out binary.
+- **Expected-stats outcomes (xwOBA)** — batted balls are scored by how well they were hit
+  (Statcast's `estimated_woba_using_speedangle`), stripping batted-ball luck.
+- **Lucky / unlucky analysis** — expected ELO vs actual results surfaces who deserved better
+  (hard contact, poor results) and who outran their contact quality.
 - **Park factors** — computed per season from the data itself (home/road method), so a hit
   in Coors counts less than one in a pitcher's park.
 - **Dynamic K-factor** — rating updates scale with leverage (win-probability impact) and a

@@ -19,5 +19,10 @@ cache/elo_*.pkl
 # Streamlit secrets
 .streamlit/secrets.toml
 
+# Retrosheet artifacts belong to the wOBA+historical (v2) project, not this
+# Statcast-only expected-stats build — never commit them here.
+retrosheet_raw/
+cache/retro_*.parquet
+
 # Keep the small Statcast parquet caches so the app loads instantly:
 # cache/statcast_*.parquet and cache/player_names.parquet ARE committed.

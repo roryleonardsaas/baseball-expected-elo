@@ -13,7 +13,8 @@ BASE_K = 7.0
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "cache")
 
 # Bump when history tuple format changes so stale caches are ignored.
-_CACHE_VERSION = 8
+# v9: outcome switched to expected wOBA (xwOBA) — Iteration 3.
+_CACHE_VERSION = 9
 
 
 def expected_woba(r_batter: float, r_pitcher: float, league_woba: float) -> float:
@@ -106,11 +107,19 @@ def run_elo(
     # Park factors per (season, park), computed from the data itself
     park_factors = compute_park_factors(df)
 
-    # Variance-match the wOBA residuals to the old on-base scale so the rating
-    # spread (and therefore peak/worst/range numbers) stays interpretable.
-    woba_std = float(df["woba_value"].std()) or 1.0
+    # Expected-stats outcome (Iteration 3): Statcast xwOBA on batted balls strips
+    # batted-ball luck (a 105mph lineout still credits the hitter; a bloop single
+    # doesn't). On walks/strikeouts/HBP there's no luck to remove, so fall back to
+    # the actual wOBA weight (where xwOBA is null).
+    df = df.copy()
+    df["xwoba_outcome"] = df["estimated_woba_using_speedangle"].astype(float).fillna(
+        df["woba_value"].astype(float))
+
+    # Variance-match the residuals to the old on-base scale so the rating spread
+    # (and therefore peak/worst/range numbers) stays interpretable.
+    outcome_std = float(df["xwoba_outcome"].std()) or 1.0
     onbase_std = float(df["on_base"].std()) if "on_base" in df.columns else 0.4626
-    woba_k_scale = onbase_std / woba_std
+    outcome_k_scale = onbase_std / outcome_std
 
     batter_ratings: dict[int, float] = {}
     pitcher_ratings: dict[int, float] = {}
@@ -129,9 +138,7 @@ def run_elo(
     for row in df.itertuples(index=False):
         b_id = int(row.batter)
         p_id = int(row.pitcher)
-        outcome = float(row.woba_value)  # wOBA value of the PA (0 to ~2.0)
-        if outcome != outcome:           # NaN guard
-            outcome = 0.0
+        outcome = float(row.xwoba_outcome)  # expected wOBA (xwOBA) for this PA
         date = row.game_date
 
         r_b = batter_ratings.get(b_id, DEFAULT_RATING)
@@ -144,10 +151,10 @@ def run_elo(
         e = expected_woba(r_b, r_p, league_woba) * pf
 
         # Dynamic K: leverage × career factor, computed independently per role.
-        # woba_k_scale keeps the rating spread comparable to the on-base version.
+        # outcome_k_scale keeps the rating spread comparable to the on-base version.
         lev = _leverage_factor(row.delta_home_win_exp if has_leverage else mean_abs_wexp, mean_abs_wexp)
-        k_b = BASE_K * woba_k_scale * _career_factor(batter_pa_count[b_id]) * lev
-        k_p = BASE_K * woba_k_scale * _career_factor(pitcher_pa_count[p_id]) * lev
+        k_b = BASE_K * outcome_k_scale * _career_factor(batter_pa_count[b_id]) * lev
+        k_p = BASE_K * outcome_k_scale * _career_factor(pitcher_pa_count[p_id]) * lev
 
         b_delta = k_b * (outcome - e)
         p_delta = k_p * (outcome - e)

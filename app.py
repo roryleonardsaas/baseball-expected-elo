@@ -9,8 +9,12 @@ from collections import Counter
 from data_fetch import fetch_seasons
 from elo import run_elo, build_leaderboard, expected_woba, compute_park_factors, elo_index
 
-st.set_page_config(page_title="Baseball ELO", layout="wide")
-st.title("Baseball ELO Ratings — Iteration 2: wOBA + Park Factors")
+st.set_page_config(page_title="Baseball ELO — Expected Stats", layout="wide")
+st.title("Baseball ELO Ratings — Iteration 3: Expected Stats (xwOBA)")
+st.caption("Ratings are driven by **expected** wOBA: on batted balls the credit comes from "
+           "exit velocity and launch angle (a 105 mph lineout counts even if it's caught; a "
+           "bloop single doesn't), so the rating reflects what a hitter *controls* — quality of "
+           "contact — rather than batted-ball luck.")
 
 
 @st.cache_data(show_spinner=False)
@@ -153,7 +157,6 @@ with st.sidebar:
     min_pa = st.slider("Min PA for leaderboard", 10, 1000, 100, 10)
     sort_by = st.radio("Sort leaderboard by", ["End ELO", "Avg ELO", "Peak ELO", "Worst ELO", "Range"],
                        help="End ELO: current rating. Peak ELO: hottest point. Worst ELO: lowest point. Avg ELO: sustained value. Range: Peak minus Worst (streakiness).")
-    st.caption("Iteration 1 — on-base vs out only")
 
 # ── Load data ─────────────────────────────────────────────────────────────────
 with st.spinner(f"Loading {scope_label} Statcast data (first run: a few minutes per season)…"):
@@ -232,25 +235,27 @@ pitcher_board = build_leaderboard(
 
 # ── Leaderboards ──────────────────────────────────────────────────────────────
 st.subheader("Batters")
-st.caption("ELO+ = model talent index (from Avg ELO). wOBA+ = actual park-adjusted "
-           "seasonal wOBA, indexed to 100 (≈ wRC+). Both: 100 = average, higher = better.")
+st.caption("ELO+ = expected-stats index (xwOBA-based — what they *deserved*). wOBA+ = actual "
+           "results. 100 = average, higher = better. ELO+ **above** wOBA+ = unlucky (hit better "
+           "than results show); **below** = lucky.")
 st.dataframe(leaderboard, use_container_width=True, hide_index=True, height=600)
 
 st.subheader("Pitchers")
-st.caption("ELO− = model talent index (from Avg ELO). wOBA-agst− = actual park-adjusted "
-           "wOBA allowed, indexed to 100 (≈ ERA−/FIP−). Both: 100 = average, lower = better.")
+st.caption("ELO− = expected-stats index (xwOBA-based — contact they *deserved* to allow). "
+           "wOBA-agst− = actual results. 100 = average, lower = better. ELO− **below** "
+           "wOBA-agst− = unlucky (pitched better than results); **above** = lucky.")
 st.dataframe(pitcher_board, use_container_width=True, hide_index=True, height=600)
 
-# ── Validation: model vs raw, and strength of schedule ────────────────────────
-with st.expander("ELO vs raw production — and who faced the toughest competition"):
+# ── Expected vs actual: luck ──────────────────────────────────────────────────
+with st.expander("Expected vs actual — who's been lucky or unlucky"):
     st.markdown(
         "**Reading the scatter.** Each dot is a player. The horizontal axis is what they "
         "actually produced — park-adjusted wOBA, indexed so 100 = league average. The vertical "
-        "axis is their ELO rating on that same scale. On the diagonal = ELO and raw production "
-        "agree. Off the diagonal = the value raw rate stats miss: **leverage** (production in "
-        "high win-probability spots), **timing/path** (when in the season it happened), and a "
-        "smaller piece, **strength of schedule** (who they faced). The tables below isolate that "
-        "last piece — who faced the toughest and weakest competition."
+        "axis is their **expected** rating (ELO, built on xwOBA — quality of contact with luck "
+        "stripped). On the diagonal = results matched the contact. **Above** the line = they hit "
+        "the ball better than the box score shows (**unlucky** — line drives caught, bloops that "
+        "didn't fall). **Below** = results outran the contact (**lucky**). The tables name the "
+        "biggest gaps both ways."
     )
     v_tab_b, v_tab_p = st.tabs(["Batters", "Pitchers"])
 
@@ -264,7 +269,7 @@ with st.expander("ELO vs raw production — and who faced the toughest competiti
         fig_v = go.Figure()
         fig_v.add_trace(go.Scatter(
             x=sub[actual_col], y=sub[model_col], mode="markers",
-            text=sub["Name"], hovertemplate="%{text}<br>actual %{x}<br>model %{y}<extra></extra>",
+            text=sub["Name"], hovertemplate="%{text}<br>actual %{x}<br>expected %{y}<extra></extra>",
             marker=dict(size=6, opacity=0.6),
         ))
         lo = min(sub[model_col].min(), sub[actual_col].min())
@@ -275,45 +280,37 @@ with st.expander("ELO vs raw production — and who faced the toughest competiti
                                    mode="lines", line=dict(color="firebrick"), name="best fit"))
         fig_v.update_layout(
             title=f"r = {r:.3f}   R² = {r**2:.3f}   (n = {len(sub)})",
-            xaxis_title=f"Actual {actual_col}", yaxis_title=f"Model {model_col}",
+            xaxis_title=f"Actual {actual_col}", yaxis_title=f"Expected {model_col}",
             showlegend=False,
         )
         st.plotly_chart(fig_v, use_container_width=True, key=f"scatter_{model_col}")
 
-    def _schedule_analysis(board, model_col, actual_col, lower_better):
-        sub = board.dropna(subset=[model_col, actual_col, "Opp ELO"]).copy()
+    def _luck_analysis(board, model_col, actual_col, lower_better):
+        sub = board.dropna(subset=[model_col, actual_col]).copy()
         if len(sub) < 5:
             return
-        # gap = how much ELO credits a player vs their raw line (positive = underrated)
-        sub["gap"] = ((sub[actual_col] - sub[model_col]) if lower_better
-                      else (sub[model_col] - sub[actual_col]))
-        lo, hi = sub["Opp ELO"].min(), sub["Opp ELO"].max()
-        r_opp = float(np.corrcoef(sub["Opp ELO"], sub["gap"])[0, 1])
-        st.markdown(
-            f"**Strength of schedule is real but small.** Average opponent ELO spans only "
-            f"**{lo:.0f}–{hi:.0f}** here — over a full season everyone faces near-league-average "
-            f"competition (you never face your own staff, and the rest of the slate is fairly "
-            f"balanced). It correlates only **r = {r_opp:.2f}** with the ELO-vs-raw gap, so "
-            f"opponents explain just a sliver of it; most of the gap is **leverage and timing**. "
-            f"Still, at the margins it nudges these players:"
-        )
-        cols = ["Name", actual_col, model_col, "Opp ELO"]
+        # Luck gap: positive = deserved better than the results show (unlucky).
+        sub["Luck gap"] = (((sub[actual_col] - sub[model_col]) if lower_better
+                            else (sub[model_col] - sub[actual_col]))).round(0)
+        cols = ["Name", actual_col, model_col, "Luck gap"]
+        if "Opp ELO" in sub.columns:
+            cols.append("Opp ELO")
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown("**Toughest schedule** — faced the best opponents (raw stats understate them)")
-            st.dataframe(sub.sort_values("Opp ELO", ascending=False).head(12)[cols],
+            st.markdown("**Most unlucky** — expected ≫ actual (deserved better)")
+            st.dataframe(sub.sort_values("Luck gap", ascending=False).head(12)[cols],
                          use_container_width=True, hide_index=True)
         with c2:
-            st.markdown("**Easiest schedule** — faced the weakest opponents (raw stats flatter them)")
-            st.dataframe(sub.sort_values("Opp ELO").head(12)[cols],
+            st.markdown("**Most lucky** — actual ≫ expected (results outran the contact)")
+            st.dataframe(sub.sort_values("Luck gap").head(12)[cols],
                          use_container_width=True, hide_index=True)
 
     with v_tab_b:
         _scatter(leaderboard, "ELO+", "wOBA+")
-        _schedule_analysis(leaderboard, "ELO+", "wOBA+", lower_better=False)
+        _luck_analysis(leaderboard, "ELO+", "wOBA+", lower_better=False)
     with v_tab_p:
         _scatter(pitcher_board, "ELO−", "wOBA-agst−")
-        _schedule_analysis(pitcher_board, "ELO−", "wOBA-agst−", lower_better=True)
+        _luck_analysis(pitcher_board, "ELO−", "wOBA-agst−", lower_better=True)
 
 # ── Clutch & leverage ─────────────────────────────────────────────────────────
 with st.expander("Clutch & Leverage — is there clutch, once you adjust for who you faced?"):
@@ -543,9 +540,13 @@ st.plotly_chart(fig, use_container_width=True)
 # ── Player rating over time ───────────────────────────────────────────────────
 st.subheader("ELO Rating Over Time")
 
-# Display name → player id for the loaded scope (drives the time-series picker)
-batter_label_to_id = {display_names[pid]: pid for pid in batter_ratings}
-pitcher_label_to_id = {display_names[pid]: pid for pid in pitcher_ratings}
+# Display name → player id for the loaded scope (drives the time-series picker).
+# Filter to players meeting the Min PA bar and that have a real name — this drops
+# 1-PA noise and any IDs the MLBAM lookup couldn't resolve.
+batter_label_to_id = {display_names[pid]: pid for pid in batter_ratings
+                      if batter_pa.get(pid, 0) >= min_pa and not display_names[pid].startswith("ID:")}
+pitcher_label_to_id = {display_names[pid]: pid for pid in pitcher_ratings
+                       if pitcher_pa.get(pid, 0) >= min_pa and not display_names[pid].startswith("ID:")}
 
 def build_compressed_chart(histories: dict[str, list], role_label: str,
                            names: dict[int, str]) -> go.Figure:
