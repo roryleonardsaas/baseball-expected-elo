@@ -597,8 +597,8 @@ def build_compressed_chart(histories: dict[str, list], role_label: str,
 
     for label, history in histories.items():
         by_date: dict = defaultdict(list)
-        for pa_num, date, rating, event, opponent_id, delta, opp_elo in history:
-            by_date[date].append((pa_num, rating, event, opponent_id, delta, opp_elo))
+        for pa_num, date, rating, event, opponent_id, delta, opp_elo, ev, la, xw in history:
+            by_date[date].append((pa_num, rating, event, opponent_id, delta, opp_elo, ev, la, xw))
 
         xs, ys, hovers = [], [], []
         last_rating = None
@@ -623,16 +623,23 @@ def build_compressed_chart(histories: dict[str, list], role_label: str,
                 ys.append(last_rating)
                 hovers.append(f"{date.strftime('%b %d')} | game start | ELO: {last_rating}")
 
-            for i, (pa_num, rating, event, opponent_id, delta, opp_elo) in enumerate(pas):
+            for i, (pa_num, rating, event, opponent_id, delta, opp_elo, ev, la, xw) in enumerate(pas):
                 pa_x = base_x + (i / (n - 1) * 0.8 if n > 1 else 0.0)
                 opponent = names.get(opponent_id, f"ID:{opponent_id}")
                 result = event.replace("_", " ").title()
                 opp_label = "vs P" if role_label == "PA" else "vs B"
                 sign = "+" if delta >= 0 else ""
+                # Statcast detail explains the delta: a 105mph lineout (high xwOBA)
+                # barely dings the batter even on an out; a weak grounder costs more.
+                if ev is not None:
+                    contact = f"EV {ev} mph | LA {la}° | xwOBA {xw:.3f}<br>"
+                else:
+                    contact = f"xwOBA {xw:.3f} (no batted ball)<br>"
                 hovers.append(
                     f"{date.strftime('%b %d')} | {role_label} #{pa_num}<br>"
                     f"{opp_label}: {opponent} (ELO {opp_elo})<br>"
                     f"Result: {result}<br>"
+                    f"{contact}"
                     f"ELO: {rating} ({sign}{delta})"
                 )
                 xs.append(pa_x)

@@ -14,7 +14,8 @@ CACHE_DIR = os.path.join(os.path.dirname(__file__), "cache")
 
 # Bump when history tuple format changes so stale caches are ignored.
 # v9: outcome switched to expected wOBA (xwOBA) — Iteration 3.
-_CACHE_VERSION = 9
+# v10: history tuples carry exit velo / launch angle / xwOBA for chart hovers.
+_CACHE_VERSION = 10
 
 
 def expected_woba(r_batter: float, r_pitcher: float, league_woba: float) -> float:
@@ -114,6 +115,10 @@ def run_elo(
     df = df.copy()
     df["xwoba_outcome"] = df["estimated_woba_using_speedangle"].astype(float).fillna(
         df["woba_value"].astype(float))
+    # Robust to older caches saved before these batted-ball columns existed.
+    for _col in ("launch_speed", "launch_angle"):
+        if _col not in df.columns:
+            df[_col] = pd.NA
 
     # Variance-match the residuals to the old on-base scale so the rating spread
     # (and therefore peak/worst/range numbers) stays interpretable.
@@ -181,13 +186,17 @@ def run_elo(
             pitcher_rating_sum[p_id] += pitcher_ratings[p_id]
 
         event = row.events
+        # Batted-ball detail that explains the rating change (missing on walks/Ks)
+        ev = round(float(row.launch_speed), 1) if pd.notna(row.launch_speed) else None
+        la = round(float(row.launch_angle), 1) if pd.notna(row.launch_angle) else None
+        xw = round(outcome, 3)  # the xwOBA value that actually drove this update
         batter_history[b_id].append((
             batter_pa_count[b_id], date, round(batter_ratings[b_id], 1),
-            event, p_id, round(b_delta, 2), round(r_p, 1),
+            event, p_id, round(b_delta, 2), round(r_p, 1), ev, la, xw,
         ))
         pitcher_history[p_id].append((
             pitcher_pa_count[p_id], date, round(pitcher_ratings[p_id], 1),
-            event, b_id, round(-p_delta, 2), round(r_b, 1),
+            event, b_id, round(-p_delta, 2), round(r_b, 1), ev, la, xw,
         ))
 
     full_season_pa = 400
@@ -232,13 +241,13 @@ def run_elo(
     # other pool's rating, so it gets the other pool's shift.
     for pid, hist in batter_history.items():
         batter_history[pid] = [
-            (n, d, round(r + b_shift, 1), e, o, dl, round(oe + p_shift, 1))
-            for (n, d, r, e, o, dl, oe) in hist
+            (n, d, round(r + b_shift, 1), e, o, dl, round(oe + p_shift, 1), ev, la, xw)
+            for (n, d, r, e, o, dl, oe, ev, la, xw) in hist
         ]
     for pid, hist in pitcher_history.items():
         pitcher_history[pid] = [
-            (n, d, round(r + p_shift, 1), e, o, dl, round(oe + b_shift, 1))
-            for (n, d, r, e, o, dl, oe) in hist
+            (n, d, round(r + p_shift, 1), e, o, dl, round(oe + b_shift, 1), ev, la, xw)
+            for (n, d, r, e, o, dl, oe, ev, la, xw) in hist
         ]
 
     result = (

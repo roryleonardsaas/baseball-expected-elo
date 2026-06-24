@@ -26,6 +26,7 @@ KEEP_COLS = [
     "inning", "bat_score", "fld_score",    # pre-PA game state for leverage (late & close)
     "woba_value",                          # iter 2: actual wOBA weight
     "estimated_woba_using_speedangle",     # iter 3: xwOBA
+    "launch_speed", "launch_angle",        # iter 3: batted-ball detail for hovers
     "delta_home_win_exp",                  # leverage proxy
 ]
 
