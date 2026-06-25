@@ -155,8 +155,8 @@ with st.sidebar:
         st.caption("Uncached seasons download ~a few min each on first use.")
 
     min_pa = st.slider("Min PA for leaderboard", 10, 1000, 100, 10)
-    sort_by = st.radio("Sort leaderboard by", ["End ELO", "Avg ELO", "Peak ELO", "Worst ELO", "Range"],
-                       help="End ELO: current rating. Peak ELO: hottest point. Worst ELO: lowest point. Avg ELO: sustained value. Range: Peak minus Worst (streakiness).")
+    sort_by = st.radio("Sort leaderboard by", ["Value", "End ELO", "Avg ELO", "Peak ELO", "Worst ELO", "Range"],
+                       help="Value: rate × playing time (credits innings/PA — a workhorse beats an elite low-volume arm). End ELO: current rating. Avg ELO: sustained rate. Peak/Worst: hottest/lowest point. Range: streakiness.")
 
 # ── Load data ─────────────────────────────────────────────────────────────────
 with st.spinner(f"Loading {scope_label} Statcast data (first run: a few minutes per season)…"):
